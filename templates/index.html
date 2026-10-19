@@ -1,0 +1,195 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Expense Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">PERSONAL FINANCE DASHBOARD</p>
+            <h1>Cloud Expense Tracker</h1>
+            <p class="subtitle">Understand your money. Make better decisions.</p>
+        </div>
+        <span class="cloud-label">☁ Cloud connected</span>
+    </header>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="notice {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <section class="summary-grid">
+            <article class="summary-card income-card">
+                <p>Total Income</p>
+                <h2>₹{{ "%.2f"|format(income) }}</h2>
+            </article>
+            <article class="summary-card expense-card">
+                <p>Total Expenses</p>
+                <h2>₹{{ "%.2f"|format(expenses) }}</h2>
+            </article>
+            <article class="summary-card balance-card">
+                <p>Available Balance</p>
+                <h2>₹{{ "%.2f"|format(balance) }}</h2>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <article class="panel">
+                <h2>Add a transaction</h2>
+                <p class="muted">Record money coming in or going out.</p>
+
+                <form action="{{ url_for('add_transaction') }}" method="POST">
+                    <label for="transaction_type">Transaction type</label>
+                    <select name="transaction_type" id="transaction_type" required>
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                    </select>
+
+                    <label for="amount">Amount (₹)</label>
+                    <input type="number" name="amount" id="amount"
+                           min="0.01" max="1000000000" step="0.01"
+                           placeholder="e.g. 250.00" required>
+
+                    <label for="category">Category</label>
+                    <select name="category" id="category" required>
+                        {% for category in categories %}
+                            <option value="{{ category }}">{{ category }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <label for="description">Description</label>
+                    <input type="text" name="description" id="description"
+                           maxlength="200" placeholder="e.g. Lunch">
+
+                    <label for="transaction_date">Date</label>
+                    <input type="date" name="transaction_date"
+                           id="transaction_date" value="{{ today }}" required>
+
+                    <button type="submit" class="primary-button">Add transaction</button>
+                </form>
+            </article>
+
+            <article class="panel chart-panel">
+                <h2>Spending by category</h2>
+                <p class="muted">See where your expenses go.</p>
+                <div class="chart-container">
+                    <canvas id="expenseChart"></canvas>
+                </div>
+                <p id="chart-empty" class="muted" hidden>
+                    Add an expense to see your chart.
+                </p>
+            </article>
+        </section>
+
+        <section class="panel transactions-panel">
+            <div class="section-heading">
+                <div>
+                    <h2>Recent transactions</h2>
+                    <p class="muted">Your records saved in the cloud database.</p>
+                </div>
+                <span class="count-badge">{{ transactions|length }} records</span>
+            </div>
+
+            {% if transactions %}
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Details</th>
+                                <th>Category</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in transactions %}
+                                <tr>
+                                    <td>{{ t.transaction_date }}</td>
+                                    <td>{{ t.description or "—" }}</td>
+                                    <td>{{ t.category }}</td>
+                                    <td>
+                                        <span class="type-tag {{ t.transaction_type }}">
+                                            {{ t.transaction_type|title }}
+                                        </span>
+                                    </td>
+                                    <td class="amount-cell">
+                                        {% if t.transaction_type == 'income' %}+{% else %}−{% endif %}
+                                        ₹{{ "%.2f"|format(t.amount) }}
+                                    </td>
+                                    <td>
+                                        <form action="{{ url_for('delete_transaction', transaction_id=t.id) }}"
+                                              method="POST"
+                                              onsubmit="return confirm('Delete this transaction?');">
+                                            <button type="submit" class="delete-button">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <p>No transactions yet.</p>
+                    <p class="muted">Add your first income or expense above.</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <footer>
+            <p>Cloud Expense Tracker · Flask + Supabase PostgreSQL</p>
+        </footer>
+    </main>
+
+    <script>
+        const labels = {{ chart_labels | tojson }};
+        const values = {{ chart_values | tojson }};
+        const chartCanvas = document.getElementById("expenseChart");
+        const emptyMessage = document.getElementById("chart-empty");
+
+        if (labels.length === 0) {
+            chartCanvas.hidden = true;
+            emptyMessage.hidden = false;
+        } else {
+            new Chart(chartCanvas, {
+                type: "doughnut",
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: [
+                            "#6478f5", "#22b8a7", "#f5a64a",
+                            "#e879a9", "#9b8afb", "#54a7e8",
+                            "#ef7777", "#91b85b"
+                        ],
+                        borderWidth: 3,
+                        borderColor: "#ffffff"
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: "bottom"
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
